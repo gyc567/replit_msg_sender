@@ -1,4 +1,4 @@
-{ nix }: with nix;
+{ pkgs, python3 }:
 let
   pyEnv = python3.withPackages (ps: [
     ps.requests
