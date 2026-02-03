@@ -1,6 +1,6 @@
-{ pkgs, python3 }:
+{ pkgs }:
 let
-  pyEnv = python3.withPackages (ps: [
+  pyEnv = pkgs.python3.withPackages (ps: [
     ps.requests
     ps.schedule
     ps.flask
