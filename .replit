@@ -1,0 +1,13 @@
+run = "python main.py"
+
+# 部署配置
+[deployment]
+build = "pip install -e ."
+deploymentTarget = { name = "Replit", type = "always" }
+
+# 自动重启
+[debugger]
+enabled = true
+
+# 环境变量文件 (不会被提交到代码仓库)
+# Secrets 应该在 Replit 的Secrets面板中配置
