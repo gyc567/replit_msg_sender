@@ -24,8 +24,8 @@ TOPIC_ID = int(os.environ.get('BOTSEVER_TOPIC_ID', '13'))
 # Webhook 监听路径
 ROUTE_PATH = os.environ.get('WEBHOOK_ROUTE_PATH', '/twitter-webhook')
 
-# 初始端口号
-START_PORT = int(os.environ.get('WEBHOOK_START_PORT', '5006'))
+# 初始端口号 (Replit部署强制使用5000端口)
+START_PORT = 5000
 
 # ======================= 验证配置 =======================
 if not os.environ.get('TELEGRAM_BOT_TOKEN'):
