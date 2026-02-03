@@ -13,7 +13,203 @@ from typing import Optional
 app = Flask(__name__)
 
 # ==========================================
-# 0. 监控日志系统
+# 0. Twitter 监控日志系统
+# ==========================================
+
+
+class TwitterLogger:
+    """Twitter 关键词日志 - 监控 Twitter 相关接口的联通性和功能性"""
+
+    def __init__(self):
+        self.start_time = datetime.now()
+        self.webhook_requests = 0
+        self.webhook_success = 0
+        self.webhook_error = 0
+        self.webhook_ignored = 0
+
+        # 关键词匹配统计
+        self.keyword_matched = 0
+        self.keyword_not_matched = 0
+        self.matched_keywords = set()
+
+        # Twitter API 连通性
+        self.twitter_api_status = None  # None=未知, True=正常, False=异常
+        self.last_twitter_api_check: Optional[datetime] = None
+
+        # 推文解析
+        self.tweet_parsed_success = 0
+        self.tweet_parsed_error = 0
+        self.last_tweet_time: Optional[datetime] = None
+        self.last_error_msg: Optional[str] = None
+
+        # Telegram 转发
+        self.forward_telegram_success = 0
+        self.forward_telegram_error = 0
+
+        # 消息队列（用于日志追踪）
+        self.message_queue: list = []
+        self.max_queue_size = 100
+
+    def log_webhook_request(
+        self, endpoint: str, success: bool, error_msg: Optional[str] = None
+    ):
+        """记录 Webhook 请求"""
+        self.webhook_requests += 1
+        if success:
+            self.webhook_success += 1
+        else:
+            self.webhook_error += 1
+            self.last_error_msg = error_msg
+
+    def log_webhook_ignored(self, reason: str):
+        """记录被忽略的 Webhook 请求"""
+        self.webhook_ignored += 1
+        self._add_to_queue(
+            {"time": datetime.now().isoformat(), "type": "ignored", "reason": reason}
+        )
+
+    def log_keyword_match(self, keyword: str, matched: bool):
+        """记录关键词匹配"""
+        if matched:
+            self.keyword_matched += 1
+            self.matched_keywords.add(keyword)
+        else:
+            self.keyword_not_matched += 1
+
+    def log_tweet_parsed(
+        self, success: bool, tweet_user: str, error_msg: Optional[str] = None
+    ):
+        """记录推文解析结果"""
+        if success:
+            self.tweet_parsed_success += 1
+            self.last_tweet_time = datetime.now()
+        else:
+            self.tweet_parsed_error += 1
+            self.last_error_msg = error_msg
+
+    def log_telegram_forward(self, success: bool, error_msg: Optional[str] = None):
+        """记录 Telegram 转发结果"""
+        if success:
+            self.forward_telegram_success += 1
+        else:
+            self.forward_telegram_error += 1
+            self.last_error_msg = error_msg
+
+    def log_twitter_api_check(self, status: bool):
+        """记录 Twitter API 连通性检查结果"""
+        self.twitter_api_status = status
+        self.last_twitter_api_check = datetime.now()
+
+    def _add_to_queue(self, entry: dict):
+        """添加日志到消息队列"""
+        self.message_queue.append(entry)
+        if len(self.message_queue) > self.max_queue_size:
+            self.message_queue.pop(0)
+
+    def get_status_report(self) -> dict:
+        """获取 Twitter 监控状态报告"""
+        uptime_seconds = (datetime.now() - self.start_time).total_seconds()
+        uptime = self._format_uptime(uptime_seconds)
+
+        return {
+            "status": "healthy" if self.webhook_error == 0 else "degraded",
+            "uptime": uptime,
+            "uptime_seconds": uptime_seconds,
+            "webhook": {
+                "total_requests": self.webhook_requests,
+                "success": self.webhook_success,
+                "errors": self.webhook_error,
+                "ignored": self.webhook_ignored,
+                "success_rate": f"{(self.webhook_success / self.webhook_requests * 100) if self.webhook_requests > 0 else 0:.1f}%",
+            },
+            "keyword_matching": {
+                "matched": self.keyword_matched,
+                "not_matched": self.keyword_not_matched,
+                "unique_keywords": len(self.matched_keywords),
+                "matched_keywords": list(self.matched_keywords),
+            },
+            "tweet_parsing": {
+                "success": self.tweet_parsed_success,
+                "errors": self.tweet_parsed_error,
+            },
+            "telegram_forward": {
+                "success": self.forward_telegram_success,
+                "errors": self.forward_telegram_error,
+            },
+            "twitter_api": {
+                "status": self.twitter_api_status,
+                "last_check": self.last_twitter_api_check.isoformat()
+                if self.last_twitter_api_check
+                else None,
+            },
+            "last_activity": {
+                "last_tweet": self.last_tweet_time.isoformat()
+                if self.last_tweet_time
+                else None,
+                "last_error": {
+                    "time": self.last_error_msg,
+                    "message": self.last_error_msg,
+                }
+                if self.last_error_msg
+                else None,
+            },
+            "recent_logs": self.message_queue[-20:] if self.message_queue else [],
+        }
+
+    def _format_uptime(self, seconds: float) -> str:
+        """格式化运行时间"""
+        hours, remainder = divmod(int(seconds), 3600)
+        minutes, secs = divmod(remainder, 60)
+        return f"{hours}h {minutes}m {secs}s"
+
+    def print_status(self):
+        """打印当前 Twitter 监控状态"""
+        report = self.get_status_report()
+        print("\n" + "=" * 60)
+        print("🐦 Twitter 监控状态报告")
+        print("=" * 60)
+        print(f"🟢 运行时间: {report['uptime']}")
+        print(
+            f"📨 Webhook: {report['webhook']['total_requests']} 请求, "
+            f"{report['webhook']['success_rate']} 成功率"
+        )
+        print(
+            f"🔍 关键词: {report['keyword_matching']['matched']} 匹配, "
+            f"{report['keyword_matching']['not_matched']} 未匹配"
+        )
+        print(
+            f"📝 解析: {report['tweet_parsing']['success']} 成功, "
+            f"{report['tweet_parsing']['errors']} 失败"
+        )
+        print(
+            f"📤 转发: {report['telegram_forward']['success']} Telegram成功, "
+            f"{report['telegram_forward']['errors']} 失败"
+        )
+        print(f"🟡 Twitter API: {report['twitter_api']['status']}")
+        if report["keyword_matching"]["unique_keywords"] > 0:
+            keywords = ", ".join(
+                list(report["keyword_matching"]["matched_keywords"])[:5]
+            )
+            print(f"📌 已匹配关键词: {keywords}")
+        print("=" * 60)
+
+    def check_twitter_connectivity(self) -> bool:
+        """检查 Twitter API 连通性"""
+        try:
+            # 检查 Twitter API 健康状态（模拟检查）
+            self.log_twitter_api_check(True)
+            return True
+        except Exception as e:
+            self.log_twitter_api_check(False)
+            return False
+
+
+# 初始化 Twitter 日志器
+twitter_logger = TwitterLogger()
+
+
+# ==========================================
+# 1. 监控日志系统（通用）
 # ==========================================
 
 
@@ -277,6 +473,7 @@ def status_print():
 def metrics_check():
     """指标端点 - 返回 Prometheus 格式指标"""
     report = monitor.get_status_report()
+    twitter_report = twitter_logger.get_status_report()
     metrics = [
         f"# HELP botsever_uptime_seconds 服务运行时间（秒）",
         f"# TYPE botsever_uptime_seconds gauge",
@@ -299,8 +496,63 @@ def metrics_check():
         f"# HELP botsever_webhook_received_total Webhook接收次数",
         f"# TYPE botsever_webhook_received_total counter",
         f"botsever_webhook_received_total {report['metrics']['webhook_received']}",
+        # Twitter 指标
+        f"# HELP twitter_webhook_requests_total Twitter Webhook请求数",
+        f"# TYPE twitter_webhook_requests_total counter",
+        f"twitter_webhook_requests_total {twitter_report['webhook']['total_requests']}",
+        f"# HELP twitter_keyword_matched_total 关键词匹配次数",
+        f"# TYPE twitter_keyword_matched_total counter",
+        f"twitter_keyword_matched_total {twitter_report['keyword_matching']['matched']}",
+        f"# HELP twitter_tweet_parsed_total 推文解析成功次数",
+        f"# TYPE twitter_tweet_parsed_total counter",
+        f"twitter_tweet_parsed_total {twitter_report['tweet_parsing']['success']}",
+        f"# HELP twitter_forward_success_total Telegram转发成功次数",
+        f"# TYPE twitter_forward_success_total counter",
+        f"twitter_forward_success_total {twitter_report['telegram_forward']['success']}",
     ]
     return "\n".join(metrics), 200, {"Content-Type": "text/plain"}
+
+
+# ==========================================
+# 5. Twitter 专用监控端点
+# ==========================================
+
+
+@app.route("/twitter/status", methods=["GET"])
+def twitter_status_check():
+    """Twitter 监控状态检查端点"""
+    return jsonify(twitter_logger.get_status_report())
+
+
+@app.route("/twitter/status/print", methods=["GET"])
+def twitter_status_print():
+    """Twitter 监控状态打印端点"""
+    twitter_logger.print_status()
+    return jsonify({"status": "printed", "message": "Twitter 状态已打印到控制台"})
+
+
+@app.route("/twitter/logs", methods=["GET"])
+def twitter_logs():
+    """Twitter 日志查询端点"""
+    logs = twitter_logger.message_queue[-50:]
+    return jsonify({"count": len(logs), "logs": logs})
+
+
+# ==========================================
+# 6. Twitter 关键词配置
+# ==========================================
+
+# 从环境变量读取监控关键词（逗号分隔）
+TWITTER_KEYWORDS = (
+    os.environ.get("TWITTER_KEYWORDS", "bitcoin,btc,ethereum,eth,crypto,binance,arkham")
+    .lower()
+    .split(",")
+)
+
+
+# ==========================================
+# 7. Webhook 处理函数
+# ==========================================
 
 
 @app.route(ROUTE_PATH, methods=["POST"])
@@ -308,6 +560,7 @@ def handle_twitter_webhook():
     """处理 Twitter Webhook 请求"""
     print(f"\n[系统] 收到 Webhook 请求: {ROUTE_PATH}")
     monitor.log_request(ROUTE_PATH, True)
+    twitter_logger.log_webhook_request(ROUTE_PATH, True)
 
     # 1. 获取数据
     data = request.json
@@ -318,6 +571,7 @@ def handle_twitter_webhook():
     if not data:
         print(">>> [握手/测试] 收到空数据，返回 200 以通过验证")
         monitor.log_webhook_received(ignored=True)
+        twitter_logger.log_webhook_ignored("handshake/empty_data")
         return jsonify({"status": "success", "msg": "Handshake received"}), 200
 
     print(">>> 收到原始数据:", json.dumps(data, ensure_ascii=False))
@@ -333,10 +587,31 @@ def handle_twitter_webhook():
             "user", data.get("author", data.get("screen_name", "未知用户"))
         )
 
+        # 记录推文解析
+        twitter_logger.log_tweet_parsed(True, tweet_user)
+
         if tweet_text == "无正文内容" and tweet_link == "":
             print(">>> [忽略] 数据有效但不包含内容，跳过发送")
             monitor.log_webhook_received(ignored=True)
+            twitter_logger.log_webhook_ignored("no_content")
             return jsonify({"status": "ignored"}), 200
+
+        # 3. 关键词匹配
+        text_lower = tweet_text.lower()
+        matched = False
+        for keyword in TWITTER_KEYWORDS:
+            keyword = keyword.strip()
+            if keyword and keyword in text_lower:
+                matched = True
+                print(f">>> [关键词匹配] '{keyword}' 匹配成功")
+                twitter_logger.log_keyword_match(keyword, True)
+                break
+
+        if not matched:
+            print(">>> [忽略] 推文不包含监控关键词，跳过发送")
+            twitter_logger.log_keyword_match("none", False)
+            monitor.log_webhook_received(ignored=True)
+            return jsonify({"status": "ignored", "reason": "no_keyword_match"}), 200
 
         # 3. 拼接消息
         tg_message = (
@@ -346,8 +621,9 @@ def handle_twitter_webhook():
             f"🔗 <a href='{tweet_link}'>点击查看推文</a>"
         )
 
-        # 4. 发送
-        send_to_telegram(tg_message)
+        # 4. 发送到 Telegram
+        success = send_to_telegram(tg_message)
+        twitter_logger.log_telegram_forward(success)
 
         return jsonify({"status": "success"}), 200
 
