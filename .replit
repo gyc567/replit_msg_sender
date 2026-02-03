@@ -3,7 +3,6 @@ run = "python main.py"
 # 部署配置
 [deployment]
 build = "pip install -e ."
-deploymentTarget = { name = "Replit", type = "always" }
 
 # 自动重启
 [debugger]
