@@ -4,6 +4,8 @@ modules = ["python-3.12", "nix"]
 # 部署配置
 [deployment]
 build = "pip install -e ."
+deploymentTarget = "vm"
+run = ["python", "main.py"]
 
 # 自动重启
 [debugger]
@@ -43,6 +45,9 @@ externalPort = 5000
 [[ports]]
 localPort = 5006
 externalPort = 80
+
+[agent]
+expertMode = true
 
 # 环境变量文件 (不会被提交到代码仓库)
 # Secrets 应该在 Replit 的Secrets面板中配置
