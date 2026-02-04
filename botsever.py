@@ -552,6 +552,23 @@ def send_to_telegram(message):
 # ==========================================
 
 
+@app.route("/", methods=["GET"])
+def index():
+    """根路径 - 返回服务状态（用于 Replit 健康检查）"""
+    return jsonify(
+        {
+            "status": "ok",
+            "service": "Twitter Webhook Server",
+            "version": "1.0.0",
+            "endpoints": {
+                "webhook": "/twitter-webhook",
+                "health": "/health",
+                "status": "/status",
+            },
+        }
+    )
+
+
 @app.route("/health", methods=["GET"])
 def health_check():
     """健康检查端点 - 返回服务状态"""
