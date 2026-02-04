@@ -699,12 +699,19 @@ TWITTER_KEYWORDS = (
 
 @app.route(ROUTE_PATH, methods=["POST"])
 def handle_twitter_webhook():
-    """处理 Twitter Webhook 请求"""
+    """处理 TwitterAPI.io Webhook 请求 (基于官方文档格式)"""
     print(_twitter_log(f"[系统] 收到 Webhook 请求: {ROUTE_PATH}"))
     monitor.log_request(ROUTE_PATH, True)
     twitter_logger.log_webhook_request(ROUTE_PATH, True)
 
-    # 1. 获取数据
+    # 1. 验证 API Key (可选但推荐)
+    expected_api_key = os.environ.get("TWITTER_API_KEY", "")
+    received_api_key = request.headers.get("X-API-Key", "")
+    if expected_api_key and received_api_key != expected_api_key:
+        print(_twitter_log("[安全] API Key 验证失败"))
+        return jsonify({"status": "error", "msg": "Unauthorized"}), 401
+
+    # 2. 获取数据
     data = request.json
     if not data:
         data = request.form.to_dict()
@@ -716,58 +723,96 @@ def handle_twitter_webhook():
         twitter_logger.log_webhook_ignored("handshake/empty_data")
         return jsonify({"status": "success", "msg": "Handshake received"}), 200
 
-    print(_twitter_log(f"收到原始数据: {json.dumps(data, ensure_ascii=False)}"))
+    print(_twitter_log(f"收到原始数据: {json.dumps(data, ensure_ascii=False)[:500]}..."))
     monitor.log_webhook_received(ignored=False)
 
-    # 2. 解析推文内容
     try:
-        tweet_text = data.get(
-            "text", data.get("content", data.get("full_text", "无正文内容"))
-        )
-        tweet_link = data.get("link", data.get("url", data.get("tweet_url", "")))
-        tweet_user = data.get(
-            "user", data.get("author", data.get("screen_name", "未知用户"))
-        )
+        # 3. 解析 TwitterAPI.io 格式
+        event_type = data.get("event_type", "tweet")
+        rule_tag = data.get("rule_tag", "unknown")
+        tweets = data.get("tweets", [])
+        
+        # 兼容旧格式：如果没有 tweets 数组，将整个 data 作为单条推文
+        if not tweets and data.get("text") or data.get("content"):
+            tweets = [data]
+        
+        if not tweets:
+            print(_twitter_log("[忽略] 没有推文数据"))
+            twitter_logger.log_webhook_ignored("no_tweets")
+            return jsonify({"status": "ignored", "reason": "no_tweets"}), 200
 
-        # 记录推文解析
-        twitter_logger.log_tweet_parsed(True, tweet_user)
+        processed_count = 0
+        for tweet in tweets:
+            # 解析推文字段
+            tweet_id = tweet.get("id", "")
+            tweet_text = tweet.get("text", tweet.get("content", tweet.get("full_text", "")))
+            
+            # 解析作者信息
+            author = tweet.get("author", {})
+            if isinstance(author, dict):
+                tweet_user = author.get("username", author.get("name", "未知用户"))
+                user_display = f"@{tweet_user}" if tweet_user != "未知用户" else tweet_user
+            else:
+                tweet_user = str(author) if author else tweet.get("user", "未知用户")
+                user_display = tweet_user
+            
+            # 构建推文链接
+            if tweet_id and tweet_user != "未知用户":
+                tweet_link = f"https://twitter.com/{tweet_user}/status/{tweet_id}"
+            else:
+                tweet_link = tweet.get("link", tweet.get("url", tweet.get("tweet_url", "")))
+            
+            # 获取统计数据
+            retweet_count = tweet.get("retweet_count", 0)
+            like_count = tweet.get("like_count", 0)
+            reply_count = tweet.get("reply_count", 0)
+            created_at = tweet.get("created_at", "")
 
-        if tweet_text == "无正文内容" and tweet_link == "":
-            print(_twitter_log("[忽略] 数据有效但不包含内容，跳过发送"))
-            monitor.log_webhook_received(ignored=True)
-            twitter_logger.log_webhook_ignored("no_content")
-            return jsonify({"status": "ignored"}), 200
+            twitter_logger.log_tweet_parsed(True, tweet_user)
 
-        # 3. 关键词匹配
-        text_lower = tweet_text.lower()
-        matched = False
-        for keyword in TWITTER_KEYWORDS:
-            keyword = keyword.strip()
-            if keyword and keyword in text_lower:
-                matched = True
-                print(_twitter_log(f"[关键词匹配] '{keyword}' 匹配成功"))
-                twitter_logger.log_keyword_match(keyword, True)
-                break
+            if not tweet_text:
+                print(_twitter_log(f"[忽略] 推文 {tweet_id} 无内容"))
+                continue
 
-        if not matched:
-            print(_twitter_log("[忽略] 推文不包含监控关键词，跳过发送"))
-            twitter_logger.log_keyword_match("none", False)
-            monitor.log_webhook_received(ignored=True)
-            return jsonify({"status": "ignored", "reason": "no_keyword_match"}), 200
+            # 4. 关键词匹配
+            text_lower = tweet_text.lower()
+            matched_keyword = None
+            for keyword in TWITTER_KEYWORDS:
+                keyword = keyword.strip()
+                if keyword and keyword.lower() in text_lower:
+                    matched_keyword = keyword
+                    print(_twitter_log(f"[关键词匹配] '{keyword}' 匹配成功"))
+                    twitter_logger.log_keyword_match(keyword, True)
+                    break
 
-        # 3. 拼接消息
-        tg_message = (
-            f"🚨 <b>新推文提醒</b>\n\n"
-            f"👤 <b>用户:</b> {tweet_user}\n"
-            f"📝 <b>内容:</b> {tweet_text}\n\n"
-            f"🔗 <a href='{tweet_link}'>点击查看推文</a>"
-        )
+            if not matched_keyword:
+                print(_twitter_log(f"[忽略] 推文不包含监控关键词"))
+                twitter_logger.log_keyword_match("none", False)
+                continue
 
-        # 4. 发送到 Telegram
-        success = send_to_telegram(tg_message)
-        twitter_logger.log_telegram_forward(success)
+            # 5. 拼接消息
+            stats_line = ""
+            if retweet_count or like_count or reply_count:
+                stats_line = f"\n📊 转发: {retweet_count} | 点赞: {like_count} | 回复: {reply_count}"
+            
+            tg_message = (
+                f"🚨 <b>新推文提醒</b> [{rule_tag}]\n\n"
+                f"👤 <b>用户:</b> {user_display}\n"
+                f"📝 <b>内容:</b> {tweet_text}{stats_line}\n\n"
+                f"🔗 <a href='{tweet_link}'>点击查看推文</a>"
+            )
 
-        return jsonify({"status": "success"}), 200
+            # 6. 发送到 Telegram
+            success = send_to_telegram(tg_message)
+            twitter_logger.log_telegram_forward(success)
+            if success:
+                processed_count += 1
+
+        return jsonify({
+            "status": "success", 
+            "processed": processed_count,
+            "total": len(tweets)
+        }), 200
 
     except Exception as e:
         print(_twitter_log(f"[出错] 处理数据异常: {e}"))
