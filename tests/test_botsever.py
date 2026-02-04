@@ -301,3 +301,45 @@ class TestTelegramTestEndpoint:
             data = response.get_json()
             assert data["success"] is True
             assert data["message"] == "Telegram 联通性测试成功"
+
+
+class TestTwitterLogHelper:
+    """Test Twitter log helper function."""
+
+    def test_twitter_log_prefix(self):
+        """Test _twitter_log adds correct prefix."""
+        result = botsever._twitter_log("测试消息")
+        assert result == "==Twitter== 测试消息"
+
+    def test_twitter_log_empty_message(self):
+        """Test _twitter_log with empty message."""
+        result = botsever._twitter_log("")
+        assert result == "==Twitter== "
+
+    def test_twitter_log_complex_message(self):
+        """Test _twitter_log with complex message."""
+        msg = "[关键词匹配] 'bitcoin' 匹配成功"
+        result = botsever._twitter_log(msg)
+        assert result == f"==Twitter== {msg}"
+
+
+class TestTwitterLoggerPrintStatus:
+    """Test TwitterLogger.print_status with log prefix."""
+
+    def test_print_status_uses_prefix(self, capsys):
+        """Test that print_status uses _twitter_log prefix."""
+        import io
+
+        logger = botsever.TwitterLogger()
+        # Set some values
+        logger.webhook_requests = 5
+        logger.webhook_success = 4
+        logger.keyword_matched = 2
+        logger.tweet_parsed_success = 3
+        logger.forward_telegram_success = 3
+
+        logger.print_status()
+
+        captured = capsys.readouterr()
+        assert "==Twitter==" in captured.out
+        assert "🐦 Twitter 监控状态报告" in captured.out

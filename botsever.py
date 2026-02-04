@@ -165,33 +165,41 @@ class TwitterLogger:
     def print_status(self):
         """打印当前 Twitter 监控状态"""
         report = self.get_status_report()
-        print("\n" + "=" * 60)
-        print("🐦 Twitter 监控状态报告")
-        print("=" * 60)
-        print(f"🟢 运行时间: {report['uptime']}")
+        print(_twitter_log("=" * 60))
+        print(_twitter_log("🐦 Twitter 监控状态报告"))
+        print(_twitter_log("=" * 60))
+        print(_twitter_log(f"🟢 运行时间: {report['uptime']}"))
         print(
-            f"📨 Webhook: {report['webhook']['total_requests']} 请求, "
-            f"{report['webhook']['success_rate']} 成功率"
+            _twitter_log(
+                f"📨 Webhook: {report['webhook']['total_requests']} 请求, "
+                f"{report['webhook']['success_rate']} 成功率"
+            )
         )
         print(
-            f"🔍 关键词: {report['keyword_matching']['matched']} 匹配, "
-            f"{report['keyword_matching']['not_matched']} 未匹配"
+            _twitter_log(
+                f"🔍 关键词: {report['keyword_matching']['matched']} 匹配, "
+                f"{report['keyword_matching']['not_matched']} 未匹配"
+            )
         )
         print(
-            f"📝 解析: {report['tweet_parsing']['success']} 成功, "
-            f"{report['tweet_parsing']['errors']} 失败"
+            _twitter_log(
+                f"📝 解析: {report['tweet_parsing']['success']} 成功, "
+                f"{report['tweet_parsing']['errors']} 失败"
+            )
         )
         print(
-            f"📤 转发: {report['telegram_forward']['success']} Telegram成功, "
-            f"{report['telegram_forward']['errors']} 失败"
+            _twitter_log(
+                f"📤 转发: {report['telegram_forward']['success']} Telegram成功, "
+                f"{report['telegram_forward']['errors']} 失败"
+            )
         )
-        print(f"🟡 Twitter API: {report['twitter_api']['status']}")
+        print(_twitter_log(f"🟡 Twitter API: {report['twitter_api']['status']}"))
         if report["keyword_matching"]["unique_keywords"] > 0:
             keywords = ", ".join(
                 list(report["keyword_matching"]["matched_keywords"])[:5]
             )
-            print(f"📌 已匹配关键词: {keywords}")
-        print("=" * 60)
+            print(_twitter_log(f"📌 已匹配关键词: {keywords}"))
+        print(_twitter_log("=" * 60))
 
     def check_twitter_connectivity(self) -> bool:
         """检查 Twitter API 连通性"""
@@ -206,6 +214,11 @@ class TwitterLogger:
 
 # 初始化 Twitter 日志器
 twitter_logger = TwitterLogger()
+
+
+def _twitter_log(message: str) -> str:
+    """为 Twitter 相关日志添加前缀标识"""
+    return f"==Twitter== {message}"
 
 
 # ==========================================
@@ -667,7 +680,7 @@ TWITTER_KEYWORDS = (
 @app.route(ROUTE_PATH, methods=["POST"])
 def handle_twitter_webhook():
     """处理 Twitter Webhook 请求"""
-    print(f"\n[系统] 收到 Webhook 请求: {ROUTE_PATH}")
+    print(_twitter_log(f"[系统] 收到 Webhook 请求: {ROUTE_PATH}"))
     monitor.log_request(ROUTE_PATH, True)
     twitter_logger.log_webhook_request(ROUTE_PATH, True)
 
@@ -678,12 +691,12 @@ def handle_twitter_webhook():
 
     # 🚨 握手/测试请求处理
     if not data:
-        print(">>> [握手/测试] 收到空数据，返回 200 以通过验证")
+        print(_twitter_log("[握手/测试] 收到空数据，返回 200 以通过验证"))
         monitor.log_webhook_received(ignored=True)
         twitter_logger.log_webhook_ignored("handshake/empty_data")
         return jsonify({"status": "success", "msg": "Handshake received"}), 200
 
-    print(">>> 收到原始数据:", json.dumps(data, ensure_ascii=False))
+    print(_twitter_log(f"收到原始数据: {json.dumps(data, ensure_ascii=False)}"))
     monitor.log_webhook_received(ignored=False)
 
     # 2. 解析推文内容
@@ -700,7 +713,7 @@ def handle_twitter_webhook():
         twitter_logger.log_tweet_parsed(True, tweet_user)
 
         if tweet_text == "无正文内容" and tweet_link == "":
-            print(">>> [忽略] 数据有效但不包含内容，跳过发送")
+            print(_twitter_log("[忽略] 数据有效但不包含内容，跳过发送"))
             monitor.log_webhook_received(ignored=True)
             twitter_logger.log_webhook_ignored("no_content")
             return jsonify({"status": "ignored"}), 200
@@ -712,12 +725,12 @@ def handle_twitter_webhook():
             keyword = keyword.strip()
             if keyword and keyword in text_lower:
                 matched = True
-                print(f">>> [关键词匹配] '{keyword}' 匹配成功")
+                print(_twitter_log(f"[关键词匹配] '{keyword}' 匹配成功"))
                 twitter_logger.log_keyword_match(keyword, True)
                 break
 
         if not matched:
-            print(">>> [忽略] 推文不包含监控关键词，跳过发送")
+            print(_twitter_log("[忽略] 推文不包含监控关键词，跳过发送"))
             twitter_logger.log_keyword_match("none", False)
             monitor.log_webhook_received(ignored=True)
             return jsonify({"status": "ignored", "reason": "no_keyword_match"}), 200
@@ -737,7 +750,7 @@ def handle_twitter_webhook():
         return jsonify({"status": "success"}), 200
 
     except Exception as e:
-        print(f"[出错] 处理数据异常: {e}")
+        print(_twitter_log(f"[出错] 处理数据异常: {e}"))
         monitor.log_request(ROUTE_PATH, False, str(e))
         return jsonify({"status": "error", "msg": str(e)}), 200
 
