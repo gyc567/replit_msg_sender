@@ -478,10 +478,13 @@ ROUTE_PATH = os.environ.get("WEBHOOK_ROUTE_PATH", "/twitter-webhook")
 START_PORT = 5000
 
 # ======================= 验证配置 =======================
+CONFIG_VALID = True
 if not os.environ.get("TELEGRAM_BOT_TOKEN"):
-    raise EnvironmentError("缺少必要配置: TELEGRAM_BOT_TOKEN")
+    print("[警告] 缺少配置: TELEGRAM_BOT_TOKEN - Telegram 功能将不可用")
+    CONFIG_VALID = False
 if not os.environ.get("TELEGRAM_CHAT_ID"):
-    raise EnvironmentError("缺少必要配置: TELEGRAM_CHAT_ID")
+    print("[警告] 缺少配置: TELEGRAM_CHAT_ID - Telegram 功能将不可用")
+    CONFIG_VALID = False
 # ========================================================
 
 # ==========================================
