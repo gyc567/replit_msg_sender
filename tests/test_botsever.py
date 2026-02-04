@@ -1,4 +1,5 @@
 """Tests for botsever.py - Flask webhook server."""
+
 import os
 import sys
 import pytest
@@ -15,8 +16,8 @@ class TestBotseverConfig:
 
     def test_config_loads_from_env(self):
         """Verify configuration loads from environment variables."""
-        assert botsever.BOT_TOKEN == 'test_bot_token'
-        assert botsever.TG_CHAT_ID == 'test_chat_id'
+        assert botsever.BOT_TOKEN == "test_bot_token"
+        assert botsever.TG_CHAT_ID == "test_chat_id"
 
     def test_default_topic_id(self):
         """Test default topic ID."""
@@ -24,7 +25,7 @@ class TestBotseverConfig:
 
     def test_default_route_path(self):
         """Test default webhook route path."""
-        assert botsever.ROUTE_PATH == '/twitter-webhook'
+        assert botsever.ROUTE_PATH == "/twitter-webhook"
 
     def test_default_start_port(self):
         """Test default start port."""
@@ -46,13 +47,13 @@ class TestTelegramSending:
 
     def test_send_to_telegram_success(self):
         """Test successful Telegram message send."""
-        with patch('botsever.requests.post') as mock_post:
+        with patch("botsever.requests.post") as mock_post:
             mock_response = Mock()
             mock_response.status_code = 200
-            mock_response.json.return_value = {'ok': True}
+            mock_response.json.return_value = {"ok": True}
             mock_post.return_value = mock_response
 
-            result = botsever.send_to_telegram('Test message')
+            result = botsever.send_to_telegram("Test message")
 
             assert result is True
             mock_post.assert_called_once()
@@ -62,7 +63,7 @@ class TestTelegramSending:
         original_token = botsever.BOT_TOKEN
         botsever.BOT_TOKEN = None
 
-        result = botsever.send_to_telegram('Test message')
+        result = botsever.send_to_telegram("Test message")
 
         botsever.BOT_TOKEN = original_token
         assert result is False
@@ -77,34 +78,34 @@ class TestWebhookEndpoint:
         for rule in botsever.app.url_map.iter_rules():
             routes.append(rule.rule)
 
-        assert '/twitter-webhook' in routes
+        assert "/twitter-webhook" in routes
 
     def test_webhook_empty_data(self):
         """Test webhook with empty JSON data."""
         client = botsever.app.test_client()
         response = client.post(
-            '/twitter-webhook',
-            data=json.dumps({}),
-            content_type='application/json'
+            "/twitter-webhook", data=json.dumps({}), content_type="application/json"
         )
 
         assert response.status_code == 200
 
     def test_webhook_valid_data(self):
         """Test webhook with valid tweet data."""
-        with patch.object(botsever, 'send_to_telegram') as mock_send:
+        with patch.object(botsever, "send_to_telegram") as mock_send:
             mock_send.return_value = True
 
             client = botsever.app.test_client()
 
             response = client.post(
-                '/twitter-webhook',
-                data=json.dumps({
-                    'text': 'Test tweet content',
-                    'link': 'https://twitter.com/user/status/123',
-                    'user': 'test_user'
-                }),
-                content_type='application/json'
+                "/twitter-webhook",
+                data=json.dumps(
+                    {
+                        "text": "Test tweet content",
+                        "link": "https://twitter.com/user/status/123",
+                        "user": "test_user",
+                    }
+                ),
+                content_type="application/json",
             )
 
             assert response.status_code == 200
@@ -117,6 +118,7 @@ class TestFlaskApp:
     def test_app_created(self):
         """Test Flask app is created."""
         from flask import Flask
+
         assert isinstance(botsever.app, Flask)
 
     def test_run_server_returns_port(self):
@@ -135,23 +137,167 @@ class TestWebhookParsing:
     def test_parse_tweet_text(self):
         """Test parsing tweet text from various field names."""
         # Test 'text' field
-        data = {'text': 'Test content'}
-        text = data.get('text', data.get('content', data.get('full_text', '无正文内容')))
-        assert text == 'Test content'
+        data = {"text": "Test content"}
+        text = data.get(
+            "text", data.get("content", data.get("full_text", "无正文内容"))
+        )
+        assert text == "Test content"
 
         # Test 'content' field
-        data = {'content': 'Test content'}
-        text = data.get('text', data.get('content', data.get('full_text', '无正文内容')))
-        assert text == 'Test content'
+        data = {"content": "Test content"}
+        text = data.get(
+            "text", data.get("content", data.get("full_text", "无正文内容"))
+        )
+        assert text == "Test content"
 
     def test_parse_tweet_user(self):
         """Test parsing tweet user from various field names."""
-        data = {'user': 'test_user'}
-        user = data.get('user', data.get('author', data.get('screen_name', '未知用户')))
-        assert user == 'test_user'
+        data = {"user": "test_user"}
+        user = data.get("user", data.get("author", data.get("screen_name", "未知用户")))
+        assert user == "test_user"
 
     def test_parse_tweet_link(self):
         """Test parsing tweet link from various field names."""
-        data = {'link': 'https://twitter.com/user/status/123'}
-        link = data.get('link', data.get('url', data.get('tweet_url', '')))
-        assert link == 'https://twitter.com/user/status/123'
+        data = {"link": "https://twitter.com/user/status/123"}
+        link = data.get("link", data.get("url", data.get("tweet_url", "")))
+        assert link == "https://twitter.com/user/status/123"
+
+
+class TestTelegramConnectivityTester:
+    """Test Telegram connectivity testing functionality."""
+
+    def test_tester_initialization(self):
+        """Test TelegramConnectivityTester initializes correctly."""
+        tester = botsever.TelegramConnectivityTester()
+        assert tester.last_test_result is None
+
+    def test_test_connectivity_success(self):
+        """Test successful Telegram connectivity test."""
+        with patch("botsever.requests.post") as mock_post:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"ok": True, "result": {}}
+            mock_post.return_value = mock_response
+
+            tester = botsever.TelegramConnectivityTester()
+            result = tester.test_connectivity()
+
+            assert result["success"] is True
+            assert result["message"] == "Telegram 联通性测试成功"
+            assert result["error"] is None
+            assert "timestamp" in result
+            assert tester.last_test_result == result
+
+    def test_test_connectivity_api_error(self):
+        """Test Telegram connectivity test with API error."""
+        with patch("botsever.requests.post") as mock_post:
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                "ok": False,
+                "description": "Bot was blocked by user",
+            }
+            mock_post.return_value = mock_response
+
+            tester = botsever.TelegramConnectivityTester()
+            result = tester.test_connectivity()
+
+            assert result["success"] is False
+            assert result["message"] == "Telegram API 返回错误"
+            assert "Bot was blocked by user" in result["error"]
+
+    def test_test_connectivity_http_error(self):
+        """Test Telegram connectivity test with HTTP error."""
+        import requests
+
+        with patch("botsever.requests.post") as mock_post:
+            mock_post.side_effect = requests.HTTPError("500 Server Error")
+
+            tester = botsever.TelegramConnectivityTester()
+            result = tester.test_connectivity()
+
+            assert result["success"] is False
+            # HTTPError is subclass of RequestException, caught by RequestException handler
+            assert result["message"] == "Telegram 连接失败"
+            assert "500 Server Error" in result["error"]
+
+    def test_test_connectivity_timeout(self):
+        """Test Telegram connectivity test with timeout."""
+        import requests
+
+        with patch("botsever.requests.post") as mock_post:
+            mock_post.side_effect = requests.exceptions.Timeout()
+
+            tester = botsever.TelegramConnectivityTester()
+            result = tester.test_connectivity()
+
+            assert result["success"] is False
+            assert result["message"] == "Telegram 连接超时"
+            assert "timeout" in result["error"].lower()
+
+    def test_test_connectivity_request_exception(self):
+        """Test Telegram connectivity test with request exception."""
+        import requests
+
+        with patch("botsever.requests.post") as mock_post:
+            mock_post.side_effect = requests.exceptions.RequestException(
+                "Connection refused"
+            )
+
+            tester = botsever.TelegramConnectivityTester()
+            result = tester.test_connectivity()
+
+            assert result["success"] is False
+            assert result["message"] == "Telegram 连接失败"
+            assert "Connection refused" in result["error"]
+
+    def test_test_connectivity_unexpected_exception(self):
+        """Test Telegram connectivity test with unexpected exception."""
+        with patch("botsever.requests.post") as mock_post:
+            mock_post.side_effect = ValueError("Unexpected error")
+
+            tester = botsever.TelegramConnectivityTester()
+            result = tester.test_connectivity()
+
+            assert result["success"] is False
+            assert result["message"] == "未知错误"
+            assert "Unexpected error" in result["error"]
+
+    def test_test_message_format(self):
+        """Test that test message contains expected format."""
+        tester = botsever.TelegramConnectivityTester()
+        timestamp = "2024-01-01 12:00:00"
+        message = tester.TEST_MESSAGE.format(timestamp=timestamp)
+        assert "🔧" in message
+        assert "Telegram 联通性测试" in message
+        assert "2024-01-01 12:00:00" in message
+
+
+class TestTelegramTestEndpoint:
+    """Test Telegram connectivity test endpoint."""
+
+    def test_telegram_test_endpoint_exists(self):
+        """Test that /telegram/test endpoint is configured."""
+        routes = []
+        for rule in botsever.app.url_map.iter_rules():
+            routes.append(rule.rule)
+
+        assert "/telegram/test" in routes
+
+    def test_telegram_test_endpoint_get(self):
+        """Test /telegram/test endpoint returns connectivity result."""
+        with patch.object(botsever.telegram_tester, "test_connectivity") as mock_test:
+            mock_test.return_value = {
+                "success": True,
+                "message": "Telegram 联通性测试成功",
+                "error": None,
+                "timestamp": "2024-01-01 12:00:00",
+            }
+
+            client = botsever.app.test_client()
+            response = client.get("/telegram/test")
+
+            assert response.status_code == 200
+            data = response.get_json()
+            assert data["success"] is True
+            assert data["message"] == "Telegram 联通性测试成功"

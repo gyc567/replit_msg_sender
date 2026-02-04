@@ -348,6 +348,103 @@ class MonitorLogger:
 # 初始化监控日志器
 monitor = MonitorLogger()
 
+
+# ==========================================
+# 1. Telegram 联通性测试器 (KISS, 高内聚)
+# ==========================================
+
+
+class TelegramConnectivityTester:
+    """Telegram 联通性测试器 - 专注测试 Telegram 消息发送功能"""
+
+    TEST_MESSAGE = "🔧 <b>Telegram 联通性测试</b>\n\n✅ 测试消息发送成功！\n⏰ 测试时间: {timestamp}"
+
+    def __init__(self):
+        self.last_test_result: Optional[dict] = None
+
+    def test_connectivity(self) -> dict:
+        """
+        测试 Telegram 联通性
+
+        Returns:
+            dict: {
+                "success": bool,
+                "message": str,
+                "error": Optional[str],
+                "timestamp": str
+            }
+        """
+        import time
+
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        test_message = self.TEST_MESSAGE.format(timestamp=timestamp)
+
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": TG_CHAT_ID,
+            "text": test_message,
+            "parse_mode": "HTML",
+        }
+
+        if TOPIC_ID:
+            payload["message_thread_id"] = TOPIC_ID
+
+        try:
+            response = requests.post(url, json=payload, timeout=10)
+            resp_data = response.json()
+
+            if response.status_code == 200 and resp_data.get("ok"):
+                result = {
+                    "success": True,
+                    "message": "Telegram 联通性测试成功",
+                    "error": None,
+                    "timestamp": timestamp,
+                }
+                print("[✅ Telegram 测试] 联通性正常")
+            else:
+                result = {
+                    "success": False,
+                    "message": "Telegram API 返回错误",
+                    "error": str(resp_data),
+                    "timestamp": timestamp,
+                }
+                print(f"[❌ Telegram 测试] 失败: {resp_data}")
+
+        except requests.exceptions.Timeout:
+            result = {
+                "success": False,
+                "message": "Telegram 连接超时",
+                "error": "Request timeout after 10 seconds",
+                "timestamp": timestamp,
+            }
+            print("[❌ Telegram 测试] 连接超时")
+
+        except requests.exceptions.RequestException as e:
+            result = {
+                "success": False,
+                "message": "Telegram 连接失败",
+                "error": str(e),
+                "timestamp": timestamp,
+            }
+            print(f"[❌ Telegram 测试] 连接异常: {e}")
+
+        except Exception as e:
+            result = {
+                "success": False,
+                "message": "未知错误",
+                "error": str(e),
+                "timestamp": timestamp,
+            }
+            print(f"[❌ Telegram 测试] 未知异常: {e}")
+
+        self.last_test_result = result
+        return result
+
+
+# 初始化 Telegram 联通性测试器
+telegram_tester = TelegramConnectivityTester()
+
+
 # ==========================================
 # 1. 必填配置
 # ==========================================
@@ -511,6 +608,18 @@ def metrics_check():
         f"twitter_forward_success_total {twitter_report['telegram_forward']['success']}",
     ]
     return "\n".join(metrics), 200, {"Content-Type": "text/plain"}
+
+
+# ==========================================
+# 5. Telegram 联通性测试端点
+# ==========================================
+
+
+@app.route("/telegram/test", methods=["GET"])
+def telegram_connectivity_test():
+    """Telegram 联通性测试端点 - 发送测试消息验证 Telegram 连接"""
+    result = telegram_tester.test_connectivity()
+    return jsonify(result)
 
 
 # ==========================================
