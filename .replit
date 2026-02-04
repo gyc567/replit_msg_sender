@@ -5,7 +5,7 @@ modules = ["python-3.12", "nix"]
 [deployment]
 build = ["pip", "install", "-r", "requirements.txt"]
 deploymentTarget = "vm"
-run = ["python", "botsever.py"]
+run = ["python", "prod_server.py"]
 
 # 自动重启
 [debugger]
